@@ -1319,32 +1319,45 @@ function downloadVCF() {
   var fullName = (d.fullName && d.fullName.trim()) || ((d.lastName || '') + (d.firstName || '')).trim() || (d.smsName && d.smsName.trim()) || '';
   var displayName = prefix + fullName;
   var noteLines = buildFullNote(d);
-  // VCF 3.0: NOTE 值裡的換行必須用字面 \n，特殊字元需跳脫
-  var noteVcf = noteLines.map(function(l){
-    return l.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
-  }).join('\\n');
-  var vcf = 'BEGIN:VCARD\nVERSION:3.0\n';
   // VCF 欄位值跳脫
   function vcfEsc(s) { return (s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n'); }
-  vcf += 'FN:' + vcfEsc(displayName) + '\n';
+  function foldVcfLine(line) {
+    var parts = [];
+    var current = '';
+    var encoder = new TextEncoder();
+    Array.from(line).forEach(function(ch) {
+      var limit = parts.length ? 74 : 75;
+      if (current && encoder.encode(current + ch).length > limit) {
+        parts.push(current);
+        current = ch;
+      } else {
+        current += ch;
+      }
+    });
+    if (current) parts.push(current);
+    return parts.join('\r\n ');
+  }
+  // VCF 3.0: NOTE 值裡的換行必須用字面 \n，特殊字元需跳脫
+  var noteVcf = noteLines.map(vcfEsc).join('\\n');
+  var vcfLines = ['BEGIN:VCARD', 'VERSION:3.0'];
+  vcfLines.push('FN:' + vcfEsc(displayName));
   var lastName = prefix + (d.lastName || d.fullName || '');
   var firstName = d.firstName || '';
-  vcf += 'N:' + vcfEsc(lastName) + ';' + vcfEsc(firstName) + ';;;\n';
-  if (d.company) vcf += 'ORG:' + vcfEsc(d.company) + '\n';
-  if (d.department) vcf += 'X-DEPARTMENT:' + vcfEsc(d.department) + '\n';
-  if (d.jobTitle) vcf += 'TITLE:' + vcfEsc(d.jobTitle) + '\n';
-  if (d.phone) vcf += 'TEL;TYPE=CELL:' + d.phone + '\n';
-  if (d.officePhone) vcf += 'TEL;TYPE=WORK:' + d.officePhone + '\n';
-  if (d.fax) vcf += 'TEL;TYPE=FAX:' + d.fax + '\n';
-  if (d.email) vcf += 'EMAIL;TYPE=WORK:' + d.email + '\n';
-  if (d.address) vcf += 'ADR;TYPE=WORK:;;' + vcfEsc(d.address) + ';;;;\n';
-  if (d.website) vcf += 'URL:' + d.website + '\n';
-  if (d.lineId) vcf += 'X-LINE:' + vcfEsc(d.lineId) + '\n';
-  vcf += 'NOTE:' + noteVcf + '\n';
-  if (d.group) vcf += 'CATEGORIES:' + vcfEsc(d.group) + '\n';
-  vcf += 'END:VCARD';
-  // iOS 不需要 BOM，且 BOM 可能導致 vCard 解析失敗
-  var vcfContent = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? vcf : '\ufeff' + vcf;
+  vcfLines.push('N:' + vcfEsc(lastName) + ';' + vcfEsc(firstName) + ';;;');
+  if (d.company) vcfLines.push('ORG:' + vcfEsc(d.company));
+  if (d.department) vcfLines.push('X-DEPARTMENT:' + vcfEsc(d.department));
+  if (d.jobTitle) vcfLines.push('TITLE:' + vcfEsc(d.jobTitle));
+  if (d.phone) vcfLines.push('TEL;TYPE=CELL:' + d.phone);
+  if (d.officePhone) vcfLines.push('TEL;TYPE=WORK:' + d.officePhone);
+  if (d.fax) vcfLines.push('TEL;TYPE=FAX:' + d.fax);
+  if (d.email) vcfLines.push('EMAIL;TYPE=WORK:' + d.email);
+  if (d.address) vcfLines.push('ADR;TYPE=WORK:;;' + vcfEsc(d.address) + ';;;;');
+  if (d.website) vcfLines.push('URL:' + d.website);
+  if (d.lineId) vcfLines.push('X-LINE:' + vcfEsc(d.lineId));
+  vcfLines.push('NOTE:' + noteVcf);
+  if (d.group) vcfLines.push('CATEGORIES:' + vcfEsc(d.group));
+  vcfLines.push('END:VCARD');
+  var vcfContent = vcfLines.map(foldVcfLine).join('\r\n');
   dlFile(vcfContent, fullName + '.vcf', 'text/vcard');
   showToast(isAndroid() ? '📇 點通知列的 .vcf 檔案匯入通訊錄' : isMobileDevice() ? '📇 記得點右上角「加入聯絡人」→「儲存」' : '已下載通訊錄 .vcf', false, 4000);
 }
